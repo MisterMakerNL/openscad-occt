@@ -10,7 +10,7 @@ mkdir -p "$out"
 fail=0
 for f in tests/*.scad; do
   name="$(basename "$f" .scad)"
-  if ./build/oscad "$f" -o "$out/$name.stl" --step "$out/$name.step" >/dev/null 2>&1; then
+  if ./build/oscad "$f" --kernel "${OSCAD_KERNEL:-occt}" -o "$out/$name.stl" --step "$out/$name.step" >/dev/null 2>&1; then
     sz=$(stat -c%s "$out/$name.stl")
     if [ "$sz" -gt 84 ]; then echo "ok   $name (stl=${sz}B)"; else echo "FAIL $name (empty stl)"; fail=1; fi
   else

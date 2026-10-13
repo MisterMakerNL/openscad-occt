@@ -320,10 +320,33 @@ correlate with OCCT's. A spike (`spike/smlib/`, zero changes to `src/`) establis
   rather than projection; analytic surface types should map to `Geom_Plane` etc.
 
 Decision taken: **pluggable backend on `main`, not a kernel branch.** The front-end
-already emits a pure-data Node tree; that seam becomes a `Backend` interface with
-`occt` (default) and `smlib` (CMake option) implementations. The differential corpus
-gate then runs both, which turns a second kernel into a second oracle. A branch that
-swapped the kernel would diverge from every feature landing on `main` and never merge.
+already emits a pure-data Node tree; that seam is now `src/Backend.h` with `occt`
+(default, `src/occt/`) and `smlib` (`src/smlib/`, CMake `-DOSCAD_WITH_SMLIB=<usd-brep>`)
+implementations, selected with `--kernel`. A branch that swapped the kernel would
+diverge from every feature landing on `main` and never merge.
+
+What landing the smlib backend taught (all caught by `tests/compare-kernels.sh`, the
+two-kernel bbox+volume differential, not by eyeballing):
+- **A second kernel is a second oracle.** OCCT's `BRepOffset_Analyse` and SMLib's
+  `SmEdge::CalcOuterAngle` classify edge convexity by unrelated code; agreeing on the
+  convex/concave fillet examples to 1e-5 in volume is real evidence the selection is
+  right. (SMLib's outer angle is measured outside the material: a cube edge is 270°,
+  a reentrant edge 90°. Getting that backwards showed up as exactly one concave edge's
+  worth of volume, which is how it was found.)
+- **The bridge, not the kernel, is where the bugs were.** Disjoint bodies (several
+  shells), a single self-closed face (torus), and vertex-tolerance gaps on
+  intersection curves each needed handling in `SmlibToOcct.cc`; SMLib itself produced
+  manifold solids with the expected volume every time.
+- **Scoreboard, same gate, both kernels** (`tests/verify-corpus.sh`, 139 in-scope files):
+  occt 67 matched / 0 mismatch / 69 gaps; smlib 56 matched / 0 mismatch / 81 gaps. The
+  12 extra smlib gaps are all declared limitations (bare 2D export, 2D/3D mixing, 2D
+  mirror, `linear_extrude` options), not wrong answers. One corpus file (issue1105c)
+  exposed an SMLib boolean that returns success and drops an operand; the backend now
+  checks result volume against operand volume and refuses rather than export it.
+- **`attach()` ported in ~80 lines** because it is a pure topology query (planar face
+  → centroid + outward normal → frame → rigid mate). SMLib's faceuse/region model
+  gives the outward normal directly: the upward faceuse's normal is the surface normal,
+  outward iff that faceuse borders the infinite region.
 
 Strategic questions to sit with:
 1. How far up the selection ladder do *your* real parts actually need to go?

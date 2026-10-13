@@ -14,6 +14,7 @@
 set -uo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 oscad="$root/build/oscad"
+kernel="${OSCAD_KERNEL:-occt}"   # occt (default) or smlib; each kernel is its own oracle
 corpus="${1:-$root/tests/corpus/tests/data/scad}"
 ref="$(command -v openscad || true)"
 [ -x "$oscad" ] || { echo "build oscad first: cmake --build build"; exit 2; }
@@ -44,7 +45,7 @@ gaps=(); diffs=(); xdivs=()
 while IFS= read -r f; do
   grep -qE "$UNSUP" "$f" && continue
   inscope=$((inscope+1))
-  if ! timeout "$OTMO" "$oscad" "$f" -o "$tmp/a.stl" >/dev/null 2>&1; then
+  if ! timeout "$OTMO" "$oscad" "$f" --kernel "$kernel" -o "$tmp/a.stl" >/dev/null 2>&1; then
     if [ -n "$ref" ] && timeout "$RTMO" "$ref" --export-format binstl -o "$tmp/b.stl" "$f" >/dev/null 2>&1 \
        && [ "$(python3 "$root/tests/bbox.py" tris "$tmp/b.stl")" -le 0 ]; then
       empty=$((empty+1)); continue            # both empty -> expected

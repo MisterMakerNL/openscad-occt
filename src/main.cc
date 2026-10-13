@@ -1,15 +1,12 @@
-// oscad -- a minimal SCAD interpreter on the OpenCASCADE (OCCT) B-Rep kernel.
-//   oscad input.scad [-o out.stl] [--step out.step] [--deflection 0.1]
+// oscad -- a minimal SCAD interpreter on a B-Rep kernel (OCCT by default).
+//   oscad input.scad [-o out.stl] [--step out.step] [--deflection 0.1] [--kernel occt]
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 
-#include <Standard_Failure.hxx>
-
+#include "Backend.h"
 #include "Evaluator.h"
-#include "Export.h"
-#include "Kernel.h"
 #include "Lexer.h"
 #include "Parser.h"
 
@@ -32,14 +29,16 @@ std::string replaceExt(const std::string& path, const std::string& ext) {
 }
 
 void usage() {
+  std::string kernels;
+  for (const auto& k : availableBackends()) kernels += (kernels.empty() ? "" : "|") + k;
   std::cerr << "usage: oscad input.scad [-o out.stl] [--step out.step] "
-               "[--deflection 0.1]\n";
+               "[--deflection 0.1] [--kernel " << kernels << "]\n";
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-  std::string input, stlOut, stepOut;
+  std::string input, stlOut, stepOut, kernel = "occt";
   double deflection = 0.1;
 
   for (int i = 1; i < argc; ++i) {
@@ -51,6 +50,7 @@ int main(int argc, char** argv) {
     if (a == "-o" || a == "--out") stlOut = next(a.c_str());
     else if (a == "--step") stepOut = next(a.c_str());
     else if (a == "--deflection") deflection = std::stod(next(a.c_str()));
+    else if (a == "--kernel") kernel = next(a.c_str());
     else if (a == "-h" || a == "--help") { usage(); return 0; }
     else if (!a.empty() && a[0] == '-') { std::cerr << "unknown option: " << a << "\n"; usage(); return 2; }
     else input = a;
@@ -60,32 +60,28 @@ int main(int argc, char** argv) {
   if (stlOut.empty() && stepOut.empty()) stlOut = replaceExt(input, ".stl");
 
   try {
+    std::unique_ptr<Backend> backend = makeBackend(kernel);
     std::string src = readFile(input);
     auto tokens = tokenize(src);
     auto program = parse(tokens);
     NodePtr root = evaluate(program);
-    TopoDS_Shape shape = buildShape(*root);
+    std::unique_ptr<Solid> solid = backend->build(*root);
 
-    if (shape.IsNull()) {
+    if (!solid) {
       std::cerr << "error: program produced no geometry\n";
       return 1;
     }
 
     bool ok = true;
     if (!stlOut.empty()) {
-      if (writeStl(shape, stlOut, deflection)) std::cout << "wrote " << stlOut << "\n";
+      if (solid->writeStl(stlOut, deflection)) std::cout << "wrote " << stlOut << "\n";
       else { std::cerr << "error: STL write failed\n"; ok = false; }
     }
     if (!stepOut.empty()) {
-      if (writeStep(shape, stepOut)) std::cout << "wrote " << stepOut << "\n";
+      if (solid->writeStep(stepOut)) std::cout << "wrote " << stepOut << "\n";
       else { std::cerr << "error: STEP write failed\n"; ok = false; }
     }
     return ok ? 0 : 1;
-  } catch (const Standard_Failure& e) {
-    // OCCT throws its own hierarchy (not std::exception) -- catch it so a kernel
-    // failure on awkward geometry is a clean error, never a SIGABRT/core dump.
-    std::cerr << "error: OCCT: " << e.GetMessageString() << "\n";
-    return 1;
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";
     return 1;

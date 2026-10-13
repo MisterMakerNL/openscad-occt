@@ -81,13 +81,38 @@ text, and a GL preview GUI.
   → Lexer        src/Lexer.*      tokens
   → Parser       src/Parser.*     AST            (src/Ast.h)
   → Evaluator    src/Evaluator.*  CSG node tree  (src/Node.h, values in src/Value.h)
-  → Kernel       src/Kernel.*     OCCT TopoDS_Shape
-  → Export       src/Export.*     BRepMesh→STL  |  STEPControl_Writer→STEP
+  → Backend      src/Backend.h    the kernel seam: build(tree) → opaque Solid → writeStl/writeStep
+      occt       src/occt/*       OCCT TopoDS_Shape; BRepMesh→STL, STEPControl_Writer→STEP  (default)
+      smlib      src/smlib/*      SMLib SmBrep; own tessellator→STL, SmBrep→OCCT bridge→STEP  (optional)
 ```
 
 The front-end (lexer/parser/evaluator) is kernel-agnostic: it produces a pure-data
-CSG node tree. Only `Kernel.cc` and `Export.cc` touch OCCT, so a second kernel or a
-"dump tree" mode could be added without disturbing the language layer.
+CSG node tree. A `Backend` turns the tree into geometry; nothing above the seam
+knows which kernel is underneath.
+
+### Two kernels
+
+`--kernel occt` (default) uses OpenCASCADE. `--kernel smlib` uses
+[SMLib](https://github.com/NVIDIA-Omniverse/usd-brep), the NURBS B-Rep kernel NVIDIA
+open-sourced under Apache-2.0 in October 2026. It is compiled in only when CMake is
+pointed at a usd-brep checkout:
+
+```sh
+git clone https://github.com/NVIDIA-Omniverse/usd-brep ../usd-brep
+cmake -B build -S . -DOSCAD_WITH_SMLIB=$PWD/../usd-brep   # builds the kernel too (~7 min)
+cmake --build build
+./build/oscad part.scad --kernel smlib --step part.step
+tests/compare-kernels.sh        # same files through both kernels: bbox + volume must agree
+```
+
+SMLib has no STEP writer, so its STEP goes through an exact SmBrep→OCCT transfer
+(`src/smlib/SmlibToOcct.cc`). The point of a second kernel is a second *oracle*: the
+two kernels share no code, so their boolean and fillet failures don't correlate.
+`OSCAD_KERNEL=smlib tests/verify-corpus.sh` runs the corpus gate against it. Every
+sample and example (primitives, extrudes, booleans, convex/concave fillets, `attach()`)
+agrees between the kernels on bounding box and volume. Not yet on smlib: 2D booleans
+of overlapping shapes, 2D intersection, mirror of 2D profiles, and exporting a bare 2D
+shape (SMLib's sheet bodies crash its tessellator; extrude it instead).
 
 ## Build
 

@@ -38,12 +38,30 @@ target_include_directories(step_check PRIVATE ${OpenCASCADE_INCLUDE_DIR})
 target_link_libraries(step_check PRIVATE ${OCCT_LIBS})
 
 # The interpreter.
+# Kernel-agnostic front-end + backend seam. Backends live in src/<kernel>/.
 add_executable(oscad
   src/main.cc
   src/Lexer.cc
   src/Parser.cc
   src/Evaluator.cc
-  src/Kernel.cc
-  src/Export.cc)
-target_include_directories(oscad PRIVATE ${OpenCASCADE_INCLUDE_DIR})
+  src/Backend.cc
+  src/occt/OcctBackend.cc
+  src/occt/Kernel.cc
+  src/occt/Export.cc)
+target_include_directories(oscad PRIVATE src ${OpenCASCADE_INCLUDE_DIR})
 target_link_libraries(oscad PRIVATE ${OCCT_LIBS})
+
+# Optional second kernel: SMLib from a NVIDIA usd-brep checkout. Selected at
+# run time with `oscad --kernel smlib`. See cmake/SMLib.cmake and DESIGN.md 9.1.
+set(OSCAD_WITH_SMLIB "" CACHE PATH "Path to a usd-brep checkout; enables the smlib backend")
+if(OSCAD_WITH_SMLIB)
+  include(cmake/SMLib.cmake)
+  target_sources(oscad PRIVATE src/smlib/SmlibBackend.cc src/smlib/SmlibToOcct.cc)
+  set_source_files_properties(src/smlib/SmlibBackend.cc src/smlib/SmlibToOcct.cc
+    PROPERTIES COMPILE_OPTIONS "-w")  # SMLib headers are noisy under -Wall
+  target_compile_definitions(oscad PRIVATE OSCAD_WITH_SMLIB)
+  target_link_libraries(oscad PRIVATE SM_API)
+  message(STATUS "smlib backend: ON (${OSCAD_WITH_SMLIB})")
+else()
+  message(STATUS "smlib backend: OFF (set -DOSCAD_WITH_SMLIB=/path/to/usd-brep)")
+endif()
