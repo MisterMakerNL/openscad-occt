@@ -301,6 +301,30 @@ Near-term, by leverage:
   blends meet at a corner; a single ring/toroidal fillet has none). Healing the STL
   export (stitched/shared-edge mesh) is future work; the exact B-Rep is unaffected.
 
+### 9.1 A second kernel: SMLib (NVIDIA usd-brep)
+
+On 2026-10-08 NVIDIA released SMLib — the Solid Modeling Solutions NURBS B-Rep kernel,
+~1M lines of C++ — as [usd-brep](https://github.com/NVIDIA-Omniverse/usd-brep) under
+Apache-2.0. It is the first open-licensed B-Rep kernel with production booleans and
+fillets that is *not* OCCT, which matters here for one reason: its failure modes won't
+correlate with OCCT's. A spike (`spike/smlib/`, zero changes to `src/`) established:
+
+- The kernel + its C API build standalone with a 40-line CMake file (no Omniverse
+  tooling, no OpenUSD). TBB is the only external dependency.
+- SMLib has **no STEP writer**. A ~400-line bridge (`smlib_to_occt.cc`) walks SMLib's
+  topology, transfers every surface/curve as exact NURBS into OCCT, and writes STEP
+  through OCCT. On a plate with 16 holes and on box ∪ cylinder with every edge
+  filleted minus a sphere, the result is a valid B-Rep whose volume matches SMLib's to
+  ≤3e-6 and passes `tests/step_check`.
+- Open: faces with surface poles need exact pcurve transfer (SMLib's UV trim curves)
+  rather than projection; analytic surface types should map to `Geom_Plane` etc.
+
+Decision taken: **pluggable backend on `main`, not a kernel branch.** The front-end
+already emits a pure-data Node tree; that seam becomes a `Backend` interface with
+`occt` (default) and `smlib` (CMake option) implementations. The differential corpus
+gate then runs both, which turns a second kernel into a second oracle. A branch that
+swapped the kernel would diverge from every feature landing on `main` and never merge.
+
 Strategic questions to sit with:
 1. How far up the selection ladder do *your* real parts actually need to go?
 2. Is the value "my old `.scad` → STEP", or "generated SCAD → STEP", or both?
