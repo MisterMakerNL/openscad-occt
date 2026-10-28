@@ -15,6 +15,10 @@ struct Solid {
   virtual bool writeStl(const std::string& path, double linearDeflection) = 0;
   // Exact B-Rep STEP (AP214). False on failure.
   virtual bool writeStep(const std::string& path) = 0;
+  // Kernel-side metrics (bbox + volume) as JSON, for kernels with no
+  // tessellator. False when unsupported (the default for every backend that
+  // tessellates; STL carries the same information).
+  virtual bool writeMetrics(const std::string& path) { return false; }
 };
 
 struct Backend {

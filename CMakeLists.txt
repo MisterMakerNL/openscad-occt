@@ -20,7 +20,7 @@ set(OCCT_LIBS
   TKGeomAlgo TKTopAlgo TKPrim                 # primitives + topo algos
   TKBO TKBool TKFillet TKOffset TKShHealing   # booleans / healing
   TKMesh                                      # tessellation (BRepMesh)
-  TKXSBase TKDESTEP TKDESTL)                  # data exchange: STEP + STL
+  TKXSBase TKSTEP TKSTL)                   # data exchange: STEP + STL
 
 # Toolchain smoke test -- verifies OCCT build/link/export independent of the interpreter.
 add_executable(smoke_occt tests/smoke_occt.cc)
@@ -64,4 +64,27 @@ if(OSCAD_WITH_SMLIB)
   message(STATUS "smlib backend: ON (${OSCAD_WITH_SMLIB})")
 else()
   message(STATUS "smlib backend: OFF (set -DOSCAD_WITH_SMLIB=/path/to/usd-brep)")
+endif()
+
+# Optional third kernel: SolidCore (Rust port of SMLib) through its C ABI
+# cdylib, built by the solidcore workspace itself (cargo build -p solidcore-capi
+# --release). Selected at run time with `oscad --kernel solidcore`.
+set(OSCAD_WITH_SOLIDCORE "" CACHE PATH "Path to a solidcore checkout; enables the solidcore backend")
+if(OSCAD_WITH_SOLIDCORE)
+  find_library(SOLIDCORE_CAPI_LIB solidcore_capi
+    PATHS "${OSCAD_WITH_SOLIDCORE}/bin/release" "${OSCAD_WITH_SOLIDCORE}/target/release"
+    NO_DEFAULT_PATH)
+  if(NOT SOLIDCORE_CAPI_LIB)
+    message(FATAL_ERROR "solidcore_capi library not found under ${OSCAD_WITH_SOLIDCORE}/bin/release (or target/release); run 'cargo build -p solidcore-capi --release' in the solidcore checkout first")
+  endif()
+  add_library(solidcore_capi SHARED IMPORTED)
+  set_target_properties(solidcore_capi PROPERTIES IMPORTED_LOCATION "${SOLIDCORE_CAPI_LIB}")
+  target_sources(oscad PRIVATE src/solidcore/SolidcoreBackend.cc)
+  target_compile_definitions(oscad PRIVATE OSCAD_WITH_SOLIDCORE)
+  target_link_libraries(oscad PRIVATE solidcore_capi)
+  # The cdylib is loaded at run time from the cargo target dir.
+  set_target_properties(oscad PROPERTIES BUILD_RPATH "${OSCAD_WITH_SOLIDCORE}/target/release")
+  message(STATUS "solidcore backend: ON (${SOLIDCORE_CAPI_LIB})")
+else()
+  message(STATUS "solidcore backend: OFF (set -DOSCAD_WITH_SOLIDCORE=/path/to/solidcore)")
 endif()

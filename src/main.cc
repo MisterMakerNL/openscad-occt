@@ -38,7 +38,7 @@ void usage() {
 }  // namespace
 
 int main(int argc, char** argv) {
-  std::string input, stlOut, stepOut, kernel = "occt";
+  std::string input, stlOut, stepOut, metricsOut, kernel = "occt";
   double deflection = 0.1;
 
   for (int i = 1; i < argc; ++i) {
@@ -49,6 +49,7 @@ int main(int argc, char** argv) {
     };
     if (a == "-o" || a == "--out") stlOut = next(a.c_str());
     else if (a == "--step") stepOut = next(a.c_str());
+  else if (a == "--metrics") metricsOut = next(a.c_str());
     else if (a == "--deflection") deflection = std::stod(next(a.c_str()));
     else if (a == "--kernel") kernel = next(a.c_str());
     else if (a == "-h" || a == "--help") { usage(); return 0; }
@@ -57,7 +58,7 @@ int main(int argc, char** argv) {
   }
 
   if (input.empty()) { usage(); return 2; }
-  if (stlOut.empty() && stepOut.empty()) stlOut = replaceExt(input, ".stl");
+  if (stlOut.empty() && stepOut.empty() && metricsOut.empty()) stlOut = replaceExt(input, ".stl");
 
   try {
     std::unique_ptr<Backend> backend = makeBackend(kernel);
@@ -80,6 +81,10 @@ int main(int argc, char** argv) {
     if (!stepOut.empty()) {
       if (solid->writeStep(stepOut)) std::cout << "wrote " << stepOut << "\n";
       else { std::cerr << "error: STEP write failed\n"; ok = false; }
+    }
+    if (!metricsOut.empty()) {
+      if (solid->writeMetrics(metricsOut)) std::cout << "wrote " << metricsOut << "\n";
+      else { std::cerr << "error: metrics write not supported by this kernel\n"; ok = false; }
     }
     return ok ? 0 : 1;
   } catch (const std::exception& e) {
